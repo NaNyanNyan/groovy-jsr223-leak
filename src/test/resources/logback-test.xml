@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="true">
+
+	<appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder>
+			<pattern>%d{HH:mm:ss.SSS} %level [%thread] [%C{0}] %msg%n</pattern>
+		</encoder>
+	</appender>
+
+	<logger name="root" level="debug">
+		<appender-ref ref="console"/>
+	</logger>
+
+</configuration>
