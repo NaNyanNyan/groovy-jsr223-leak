@@ -38,6 +38,9 @@ public class LeakTest {
 	private static final ScriptEngineManager SCRIPT_ENGINE_MANAGER =
 		new ScriptEngineManager(LeakTest.class.getClassLoader());
 	
+	private static final String LANG_GROOVY = "groovy";
+	private static final String LANG_JAVASCRIPT = "javascript";
+	
 	private static final String GROOVYSCRIPT =
 		"\ndef execute(context) {\n" +
 			"\tlogger.info('Inside execute function with no arguments...')\n" +
@@ -66,27 +69,27 @@ public class LeakTest {
 	
 	private static final AtomicInteger COUNTER = new AtomicInteger(0);
 	
+	private static final String LANGUAGE;
+	
+	static {
+		String language =
+			System.getProperty("language", "groovy");
+		try {
+			SCRIPT_ENGINE_MANAGER.getEngineByName(language);
+		} catch (Exception e) {
+			throw new IllegalArgumentException("Unknown/unsupported scripting language: " + language);
+		}
+		LANGUAGE = language;
+		LOGGER.info("Using \"{}\" scripting language...", language);
+	}
+	
 	Callable<Result> scriptRunner = () -> {
+
 		int taskId = COUNTER.incrementAndGet();
 		LOGGER.info("Starting task {}...", taskId);
-		String scriptSource, script;
-		String language =
-			System.getProperty("language");
-		if ("javascript".equalsIgnoreCase(language)) {
-			language = "javascript";
-			scriptSource = JAVASCRIPT;
-		} else {
-			language = "groovy";
-			scriptSource = GROOVYSCRIPT;
-		}
-		LOGGER.info("Using \"{}\" scripting language...", language);
-		script =
-			String.format(scriptSource, current().nextInt(10)).intern();
-		LOGGER.info("Script:{}", script);
-		
-		ScriptEngine engine =
-			SCRIPT_ENGINE_MANAGER.getEngineByName(language);
-		engine.put("#jsr223.groovy.engine.keep.globals", "weak");
+
+		String script = getScript();
+		ScriptEngine engine = getEngine();
 		Bindings bindings =
 			engine.getBindings(ScriptContext.ENGINE_SCOPE);
 		Context context = new Context();
@@ -96,7 +99,7 @@ public class LeakTest {
 		
 		Object scriptEvalResult =
 			engine.eval(script);
-		LOGGER.info("Script eval result: {}.", scriptEvalResult);
+//		LOGGER.info("Script eval result: {}.", scriptEvalResult);
 		
 		try {
 			return (Result) ((Invocable) engine).invokeFunction("execute", context);
@@ -111,11 +114,19 @@ public class LeakTest {
 		
 		int max = 20000;
 		final ExecutorService service =
-			Executors.newFixedThreadPool(32);
+			Executors.newFixedThreadPool(64);
 		List<Callable<Result>> tasks =
 			new ArrayList<>( max + (int)(0.1*max) );
 		IntStream.rangeClosed(1, max).forEach(i -> tasks.add(scriptRunner));
+		
+		try {
+			TimeUnit.SECONDS.sleep(10);
+		} catch (InterruptedException ex) {
+			LOGGER.warn(String.valueOf(ex), ex);
+		}
+		
 		List<Future<Result>> results;
+		long start = System.currentTimeMillis();
 		try {
 			results = service.invokeAll(tasks);
 		} catch (InterruptedException ex) {
@@ -124,6 +135,9 @@ public class LeakTest {
 				String.valueOf(ex), ex
 			);
 			throw new RuntimeException(ex);
+		} finally {
+			long end = System.currentTimeMillis() - start;
+			LOGGER.info("Finished in {} ms.", end);
 		}
 		LOGGER.info("Results list size: {}.", results.size());
 		
@@ -143,7 +157,7 @@ public class LeakTest {
 		// attach to the JVM process and analyze what's going on.
 		synchronized (this) {
 			try {
-				this.wait();
+				this.wait(60*1000);
 			} catch (InterruptedException ex) {
 				LOGGER.warn(String.valueOf(ex), ex);
 			}
@@ -151,6 +165,28 @@ public class LeakTest {
 		
 		LOGGER.info("Test case {} completed.", "testMultithreadedScriptExecution");
 		
+	}
+
+	private ScriptEngine getEngine() {
+		ScriptEngine engine =
+			SCRIPT_ENGINE_MANAGER.getEngineByName(LANGUAGE);
+		if (LANG_GROOVY.equals(LANGUAGE)) {
+			engine.put("#jsr223.groovy.engine.keep.globals", "weak");
+		}
+		return engine;
+	}
+
+	private String getScript() {
+		switch (LANGUAGE) {
+			case LANG_GROOVY: {
+				return String.format(GROOVYSCRIPT, current().nextInt(10));
+			}
+			case LANG_JAVASCRIPT: {
+				return String.format(JAVASCRIPT, current().nextInt(10));
+			}
+			default:
+				throw new IllegalStateException("Unsupported scripting language: " + LANGUAGE);
+		}
 	}
 	
 }
