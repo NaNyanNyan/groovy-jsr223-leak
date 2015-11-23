@@ -97,14 +97,13 @@ public class LeakTest {
 		bindings.put("logger", LOGGER);
 		bindings.put("taskId", taskId);
 		
-		Object scriptEvalResult =
-			engine.eval(script);
-//		LOGGER.info("Script eval result: {}.", scriptEvalResult);
+		engine.eval(script);
 		
 		try {
 			return (Result) ((Invocable) engine).invokeFunction("execute", context);
 		} finally {
 			bindings.clear();
+			bindings = null;
 			engine = null;
 		}
 	};
@@ -153,14 +152,12 @@ public class LeakTest {
 		}
 		LOGGER.info("{} terminated.", service);
 		
-		// this code is to prevent test case from terminating so that we can 
-		// attach to the JVM process and analyze what's going on.
-		synchronized (this) {
-			try {
-				this.wait(60*1000);
-			} catch (InterruptedException ex) {
-				LOGGER.warn(String.valueOf(ex), ex);
-			}
+		System.gc();
+		
+		try {
+			TimeUnit.SECONDS.sleep(10);
+		} catch (InterruptedException ex) {
+			LOGGER.warn(String.valueOf(ex), ex);
 		}
 		
 		LOGGER.info("Test case {} completed.", "testMultithreadedScriptExecution");
